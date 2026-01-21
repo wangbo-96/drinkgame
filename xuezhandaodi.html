@@ -40,6 +40,7 @@
         }
 
         #remaining {
+            width: max-content;
             line-height: 120px;
             height: 120px;
         }
@@ -230,6 +231,12 @@
                 if (deck.length === 0) {
                     deckPileEl.style.opacity = '0.4';
                     slots.forEach(slot => slot.classList.add('disabled'));
+
+                    setTimeout(() => {
+                        if (confirm("🎉 所有牌均已翻开！\n是否重新开始游戏？")) {
+                            initGame()
+                        } 
+                    }, 500);
                 } else {
                     deckPileEl.style.opacity = '1';
                     slots.forEach(slot => slot.classList.remove('disabled'));
