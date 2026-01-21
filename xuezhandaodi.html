@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>血战到底</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #2c3e50;
+            color: white;
+            height: 100vh;
+            position: relative;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .deck-area {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .deck-pile {
+            width: 80px;
+            height: 120px;
+            background: repeating-linear-gradient(135deg,
+                    #1a1a1a,
+                    #1a1a1a 10px,
+                    #2a2a2a 10px,
+                    #2a2a2a 20px);
+            border-radius: 6px;
+            margin: 0 auto;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        #remaining {
+            line-height: 120px;
+            height: 120px;
+        }
+
+        .positions {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            gap: 20px;
+        }
+
+        .slot {
+            width: 80px;
+            height: 120px;
+            border: 2px dashed #7f8c8d;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            position: relative;
+            scroll-behavior: smooth;
+        }
+
+        .slot:hover:not(.disabled) {
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .slot.disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .card {
+            position: absolute;
+            width: 80px;
+            height: 120px;
+            background: white;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 6px;
+            box-sizing: border-box;
+            font-size: 18px;
+            font-weight: bold;
+            left: 0;
+            z-index: 1;
+        }
+
+        .card .top {
+            align-self: flex-start;
+            line-height: 13px;
+        }
+
+        .card .bottom {
+            align-self: flex-end;
+            line-height: 15px;
+            transform: rotate(180deg);
+        }
+
+        .spade,
+        .club,
+        .joker.little {
+            color: black;
+        }
+
+        .heart,
+        .diamond,
+        .joker.big {
+            color: red;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 18px;
+        }
+
+        .flying-card {
+            position: absolute;
+            width: 80px;
+            height: 120px;
+            background: white;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 6px;
+            box-sizing: border-box;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>血战到底</h1>
+
+    <div class="deck-area">
+        <div class="deck-pile" id="deckPile">
+            <div id="remaining">54</div>
+        </div>
+
+    </div>
+
+    <div class="positions">
+        <div class="slot" data-index="0"></div>
+        <div class="slot" data-index="1"></div>
+        <div class="slot" data-index="2"></div>
+        <div class="slot" data-index="3"></div>
+    </div>
+
+    <script>
+        // 确保DOM完全加载后再执行
+        document.addEventListener('DOMContentLoaded', function () {
+            function createDeck() {
+                const suits = ['♠', '♥', '♦', '♣'];
+                const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+                let deck = suits.flatMap(suit => ranks.map(rank => ({ suit, rank })));
+                deck.push({ suit: 'joker', rank: 'BJ' });
+                deck.push({ suit: 'joker', rank: 'LJ' });
+                return deck;
+            }
+
+            function shuffle(deck) {
+                for (let i = deck.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [deck[i], deck[j]] = [deck[j], deck[i]];
+                }
+                return deck;
+            }
+
+            function getSuitClass(card) {
+                if (card.suit === 'joker') {
+                    return card.rank === 'BJ' ? 'joker big' : 'joker little';
+                }
+                if (card.suit === '♠') return 'spade';
+                if (card.suit === '♣') return 'club';
+                if (card.suit === '♥') return 'heart';
+                if (card.suit === '♦') return 'diamond';
+                return '';
+            }
+
+            function createCardElement(card) {
+                const div = document.createElement('div');
+                div.className = `card ${getSuitClass(card)}`;
+
+                if (card.suit === 'joker') {
+                    const topText = card.rank === 'BJ' ? 'Joker' : 'Joker';
+                    div.innerHTML = `
+              <div class="top">${topText}</div>
+              <div class="bottom">${topText}</div>
+            `;
+                } else {
+                    div.innerHTML = `
+              <div class="top">${card.rank}<br>${card.suit}</div>
+              <div class="bottom">${card.rank}<br>${card.suit}</div>
+            `;
+                }
+                return div;
+            }
+
+            // ===== 游戏状态变量（移到 initGame 内部）=====
+            let deck;
+            const slotCards = [[], [], [], []];
+            const slotBusy = [false, false, false, false];
+            const OFFSET_Y = 32;
+
+            const slots = Array.from(document.querySelectorAll('.slot'));
+            const remainingEl = document.getElementById('remaining');
+
+            // 绑定重新开始按钮
+            remainingEl.addEventListener('click', () => {
+                if (remainingEl.textContent != 54) {
+                    if (confirm("确定重新开始？")) {
+                        initGame()
+                    }
+                }
+            });
+
+
+            const deckPileEl = document.getElementById('deckPile');
+            const restartBtn = document.getElementById('restartBtn');
+
+            function updateDeckDisplay() {
+                remainingEl.textContent = deck.length;
+                if (deck.length === 0) {
+                    deckPileEl.style.opacity = '0.4';
+                    slots.forEach(slot => slot.classList.add('disabled'));
+                } else {
+                    deckPileEl.style.opacity = '1';
+                    slots.forEach(slot => slot.classList.remove('disabled'));
+                }
+            }
+
+            function initGame() {
+                // 重置牌堆
+                deck = shuffle(createDeck());
+
+                // 清空槽位
+                slots.forEach((slot, index) => {
+                    slot.innerHTML = '';
+                    slotCards[index] = [];
+                    slotBusy[index] = false;
+                    slot.classList.remove('disabled');
+                });
+
+                // 更新显示
+                updateDeckDisplay();
+            }
+
+            // 初始化点击事件
+            slots.forEach((slot, index) => {
+                slot.addEventListener('click', () => {
+                    if (deck.length === 0 || slotBusy[index]) return;
+
+                    slotBusy[index] = true;
+
+                    const cardData = deck.pop();
+                    updateDeckDisplay();
+
+                    const flyingCard = createCardElement(cardData);
+                    flyingCard.className += ' flying-card';
+                    document.body.appendChild(flyingCard);
+
+                    const deckRect = deckPileEl.getBoundingClientRect();
+                    const startX = deckRect.left + window.scrollX + deckRect.width / 2 - 40;
+                    const startY = deckRect.top + window.scrollY + deckRect.height / 2 - 60;
+
+                    const rect = slot.getBoundingClientRect();
+                    const currentCount = slotCards[index].length;
+                    const targetX = rect.left + window.scrollX;
+                    const targetY = rect.top + window.scrollY + currentCount * OFFSET_Y;
+
+                    flyingCard.style.left = startX + 'px';
+                    flyingCard.style.top = startY + 'px';
+                    flyingCard.style.transition = 'none';
+                    flyingCard.offsetHeight;
+
+                    flyingCard.style.transition = 'left 0.5s ease-out, top 0.5s ease-out';
+                    flyingCard.style.left = targetX + 'px';
+                    flyingCard.style.top = targetY + 'px';
+
+                    setTimeout(() => {
+                        document.body.removeChild(flyingCard);
+
+                        const newCardEl = createCardElement(cardData);
+                        newCardEl.style.top = (currentCount * OFFSET_Y) + 'px';
+                        newCardEl.style.zIndex = currentCount + 1;
+
+                        slot.appendChild(newCardEl);
+                        slotCards[index].push({ element: newCardEl, data: cardData });
+                        slot.scrollTop = slot.scrollHeight;
+
+                        slotBusy[index] = false;
+                    }, 500);
+                });
+            });
+
+
+            // 首次启动游戏
+            initGame();
+        });
+    </script>
+</body>
+
+</html>
